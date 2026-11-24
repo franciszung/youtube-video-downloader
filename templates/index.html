@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 视频下载器</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>YouTube 视频下载器</h1>
+            <p class="subtitle">本地 yt-dlp + 代理 + Node.js runtime</p>
+            <div id="service-status" class="service-status checking">正在检查服务状态...</div>
+        </header>
+
+        <div class="warning-banner">
+            <strong>⚠️ 重要提示</strong>
+            <p>不要直接双击 <code>yt-dlp.exe</code> 文件！请通过 <code>start.bat</code> 或命令行运行 <code>app.py</code> 来启动本工具。</p>
+        </div>
+
+        <main>
+            <section class="card">
+                <h2>下载视频</h2>
+                <div class="form-group">
+                    <label for="url">YouTube 链接</label>
+                    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." value="">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="quality">清晰度</label>
+                        <select id="quality">
+                            <option value="best">最高可用 (best)</option>
+                            <option value="2160p">4K (2160p)</option>
+                            <option value="1440p">2K (1440p)</option>
+                            <option value="1080p" selected>1080p</option>
+                            <option value="720p">720p</option>
+                            <option value="480p">480p</option>
+                            <option value="360p">360p</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="output-name">输出文件名（可选）</label>
+                        <input type="text" id="output-name" placeholder="留空使用视频标题">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group checkbox">
+                        <input type="checkbox" id="extract-frames">
+                        <label for="extract-frames">下载完成后提取关键帧</label>
+                    </div>
+                    <div class="form-group checkbox">
+                        <input type="checkbox" id="fetch-formats">
+                        <label for="fetch-formats">先获取可用格式列表</label>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="btn-download" class="btn-primary">开始下载</button>
+                    <button id="btn-formats" class="btn-secondary">获取格式</button>
+                </div>
+
+                <div id="formats-panel" class="formats-panel hidden">
+                    <h3>可用格式</h3>
+                    <table id="formats-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>格式</th>
+                                <th>分辨率</th>
+                                <th>帧率</th>
+                                <th>说明</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>设置</h2>
+                    <button id="btn-toggle-settings" class="btn-icon">▼</button>
+                </div>
+                <div id="settings-panel" class="settings-panel">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="proxy">HTTP 代理</label>
+                            <input type="text" id="proxy" placeholder="http://127.0.0.1:7892">
+                        </div>
+                        <div class="form-group checkbox">
+                            <input type="checkbox" id="use-proxy">
+                            <label for="use-proxy">启用代理</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="nodejs-runtime">Node.js 可执行文件路径</label>
+                        <input type="text" id="nodejs-runtime" placeholder="C:/path/to/node.exe">
+                    </div>
+                    <div class="form-group checkbox">
+                        <input type="checkbox" id="use-nodejs-runtime">
+                        <label for="use-nodejs-runtime">使用 Node.js runtime 解析 YouTube JS 签名</label>
+                    </div>
+                    <div class="form-group">
+                        <label for="cookies-source">YouTube Cookies 来源 (用于年龄限制视频)</label>
+                        <input type="text" id="cookies-source" placeholder="edge / chrome / firefox / brave / C:/path/to/cookies.txt">
+                    </div>
+                    <div class="form-group checkbox">
+                        <input type="checkbox" id="use-cookies">
+                        <label for="use-cookies">启用 Cookies（浏览器需已登录 YouTube 账号）</label>
+                    </div>
+                    <div class="form-group">
+                        <label for="output-dir">默认下载目录</label>
+                        <input type="text" id="output-dir" placeholder="D:/.../downloads">
+                    </div>
+                    <div class="actions">
+                        <button id="btn-save-settings" class="btn-primary">保存设置</button>
+                        <button id="btn-reset-settings" class="btn-secondary">恢复默认</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>任务进度</h2>
+                    <button id="btn-clear-tasks" class="btn-secondary small">清空已完成</button>
+                </div>
+                <div id="tasks-list" class="tasks-list">
+                    <p class="empty">暂无任务</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="section-header">
+                    <h2>已下载文件</h2>
+                    <div>
+                        <button id="btn-cleanup-junk" class="btn-secondary small" title="删除 .part-Frag*、.f*.m4a 等临时文件">清理临时文件</button>
+                        <button id="btn-refresh-files" class="btn-secondary small">刷新</button>
+                    </div>
+                </div>
+                <div id="files-list" class="files-list">
+                    <p class="empty">暂无文件</p>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>本地工具 · 仅用于合法用途</p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

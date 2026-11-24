@@ -1,0 +1,36 @@
+# 运行时组件（由 setup.ps1 / setup.bat 自动下载，不需要提交到仓库）
+runtime/
+get-pip.py
+yt-dlp.exe
+
+# 用户数据 / 私密配置
+downloads/
+thumbnails/
+cookies.txt
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+Thumbs.db
+desktop.ini
+.DS_Store
+ehthumbs.db
+
+# 打包产物
+build/
+dist/
+*.zip

@@ -1,0 +1,148 @@
+name: Build Portable Release
+
+# 打 tag (v1.0.0) 时自动构建便携版 zip 并创建 GitHub Release
+# 手动触发也可以
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows portable package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.13
+
+      - name: Prepare runtime (Python embeddable / Node.js / yt-dlp)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $PWD.Path
+          $runtime = Join-Path $root "runtime"
+
+          # --- Python 嵌入式发行版 ---
+          $pyVer = "3.13.12"
+          $pyDir = Join-Path $runtime "python"
+          New-Item -ItemType Directory -Force -Path $pyDir | Out-Null
+          $pyZip = Join-Path $env:TEMP "python-embed.zip"
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$pyVer/python-$pyVer-embed-amd64.zip" -OutFile $pyZip
+          Expand-Archive -Path $pyZip -DestinationPath $pyDir -Force
+
+          # 打开 site 模块并加上 site-packages，否则 pip 装不了包
+          $pth = Get-ChildItem -Path $pyDir -Filter "python*._pth" | Select-Object -First 1
+          $lines = Get-Content $pth.FullName
+          $lines = $lines | ForEach-Object {
+            if ($_ -match '^\s*#\s*import site') { "import site" }
+            elseif ($_ -match '^\s*#\s*Lib\\site-packages') { "Lib\site-packages" }
+            else { $_ }
+          }
+          if ($lines -notcontains "import site") { $lines += "import site" }
+          if ($lines -notcontains "Lib\site-packages") { $lines += "Lib\site-packages" }
+          Set-Content -Path $pth.FullName -Value $lines -Encoding ASCII
+
+          # --- Node.js（只要 node.exe）---
+          $nodeVer = "v22.22.2"
+          $nodeDir = Join-Path $runtime "node"
+          New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
+          $nodeZip = Join-Path $env:TEMP "node.zip"
+          Invoke-WebRequest -Uri "https://nodejs.org/dist/$nodeVer/node-$nodeVer-win-x64.zip" -OutFile $nodeZip
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($nodeZip)
+          try {
+            $entry = $archive.Entries | Where-Object { $_.Name -eq "node.exe" } | Select-Object -First 1
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $nodeDir "node.exe"), $true)
+          } finally { $archive.Dispose() }
+
+          # --- yt-dlp ---
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe" -OutFile (Join-Path $root "yt-dlp.exe")
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $py = Join-Path $PWD.Path "runtime\python\python.exe"
+          $getPip = Join-Path $PWD.Path "get-pip.py"
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip
+          & $py $getPip --no-warn-script-location
+          & $py -m pip install --no-warn-script-location -r requirements.txt
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $py = Join-Path $PWD.Path "runtime\python\python.exe"
+          & $py -c "import flask, imageio_ffmpeg, websocket, moviepy; print('deps OK')"
+          & (Join-Path $PWD.Path "yt-dlp.exe") --version
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $name = "youtube-video-downloader-${{ github.ref_name }}"
+          $staging = Join-Path $env:RUNNER_TEMP $name
+          $payload = Join-Path $staging "youtube-video-downloader"
+          New-Item -ItemType Directory -Force -Path $payload | Out-Null
+
+          # 只打包需要分发的文件
+          $include = @(
+            "app.py", "export_cookies.py", "requirements.txt",
+            "setup.ps1", "setup.bat", "start.bat", "README.md", "LICENSE"
+          )
+          foreach ($f in $include) {
+            $src = Join-Path $PWD.Path $f
+            if (Test-Path $src) { Copy-Item $src $payload -Force }
+          }
+          Copy-Item (Join-Path $PWD.Path "templates") $payload -Recurse -Force
+          Copy-Item (Join-Path $PWD.Path "static")    $payload -Recurse -Force
+          Copy-Item (Join-Path $PWD.Path "runtime")   $payload -Recurse -Force
+          Copy-Item (Join-Path $PWD.Path "yt-dlp.exe") $payload -Force
+          Copy-Item (Join-Path $PWD.Path "get-pip.py") $payload -Force
+
+          New-Item -ItemType Directory -Force -Path (Join-Path $payload "downloads")   | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $payload "thumbnails") | Out-Null
+
+          $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+          Compress-Archive -Path $payload -DestinationPath $zip -CompressionLevel Optimal
+          Write-Host "Package: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-video-downloader-portable
+          path: ${{ runner.temp }}/youtube-video-downloader-*.zip
+          if-no-files-found: error
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/youtube-video-downloader-*.zip
+          generate_release_notes: true
+          body: |
+            ## 便携版下载
+
+            `youtube-video-downloader-*.zip` —— 解压即用，无需安装 Python / Node.js。
+
+            1. 解压到任意目录
+            2. 双击 `start.bat`
+            3. 浏览器打开 http://127.0.0.1:5123
+
+            需要下载 age-restricted / 会员视频时，按 README 的「导出 YouTube Cookies」配置一次。
