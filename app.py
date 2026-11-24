@@ -8,6 +8,7 @@ YouTube 视频下载器 - 本地网页版
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -157,6 +158,9 @@ def build_ytdlp_base_cmd(cfg):
     cmd = get_ytdlp_cmd() + ["--no-update", "--no-playlist", "--no-warnings"]
     if cfg.get("use_nodejs_runtime") and cfg.get("nodejs_runtime"):
         node = resolve_path(cfg["nodejs_runtime"])
+        if not (node and Path(node).exists()):
+            # 配置里的路径失效（版本目录被清理 / 换了机器）时，回退到 PATH 上的 node
+            node = shutil.which("node")
         if node and Path(node).exists():
             # yt-dlp 默认启用 deno 且优先级高于 node。用户机器上装了 deno 时，
             # 它会盖掉自带的 node 并因权限模型求解失败。
